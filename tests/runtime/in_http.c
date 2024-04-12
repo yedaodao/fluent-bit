@@ -279,7 +279,7 @@ void flb_test_http()
     test_ctx_destroy(ctx);
 }
 
-void flb_test_msgpack()
+void flb_test_msgpack_legacy()
 {
     struct flb_lib_out_cb cb_data;
     struct test_ctx *ctx;
@@ -288,10 +288,10 @@ void flb_test_msgpack()
     int num;
     size_t b_sent;
     char buf[] = "\xdd\x00\x00\x00\x02\xdd\x00\x00"
-                "\x00\x02\xd7\x00\x65\xd3\x9c\x63"
-                "\x19\x36\xb8\xd5\x80\x81\xa7\x6d"
-                "\x65\x73\x73\x61\x67\x65\xa5\x64"
-                "\x75\x6d\x6d\x79\xbe";
+                 "\x00\x02\xd7\x00\x65\xd3\x9c\x63"
+                 "\x19\x36\xb8\xd5\x80\x81\xa7\x6d"
+                 "\x65\x73\x73\x61\x67\x65\xa5\x64"
+                 "\x75\x6d\x6d\x79\xbe";
 
 
     clear_output_num();
@@ -309,6 +309,11 @@ void flb_test_msgpack()
                          "match", "*",
                          "format", "json",
                          NULL);
+    TEST_CHECK(ret == 0);
+
+    ret = flb_input_set(ctx->flb, ctx->i_ffd,
+                        "http2", "off",
+                        NULL);
     TEST_CHECK(ret == 0);
 
     /* Start the engine */
@@ -509,7 +514,7 @@ void flb_test_http_tag_key()
 
 TEST_LIST = {
     {"http", flb_test_http},
-    {"msgpack", flb_test_msgpack},
+    {"msgpack_legacy", flb_test_msgpack_legacy},
     {"successful_response_code_200", flb_test_http_successful_response_code_200},
     {"successful_response_code_204", flb_test_http_successful_response_code_204},
     {"tag_key", flb_test_http_tag_key},
