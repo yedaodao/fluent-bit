@@ -257,6 +257,7 @@ option(FLB_OUT_VIVO_EXPORTER           "Enabel Vivo exporter output plugin"     
 option(FLB_OUT_WEBSOCKET               "Enable Websocket output plugin"               Yes)
 option(FLB_OUT_ORACLE_LOG_ANALYTICS    "Enable Oracle Cloud Infrastructure Logging analytics plugin"          Yes)
 option(FLB_OUT_CHRONICLE               "Enable Google Chronicle output plugin"        Yes)
+option(FLB_OUT_MQTT                    "Enable MQTT output plugin"                    Yes)
 option(FLB_FILTER_ALTER_SIZE           "Enable alter_size filter"                     Yes)
 option(FLB_FILTER_AWS                  "Enable aws filter"                            Yes)
 option(FLB_FILTER_ECS                  "Enable AWS ECS filter"                        Yes)
@@ -1055,6 +1056,12 @@ if(FLB_ARROW AND ARROW_GLIB_FOUND)
   FLB_DEFINITION(FLB_HAVE_ARROW)
 else()
   set(FLB_ARROW OFF)
+endif()
+
+# MQTT
+# ====
+if(FLB_OUT_MQTT)
+  add_subdirectory(${FLB_PATH_LIB_MQTTC} EXCLUDE_FROM_ALL)
 endif()
 
 # Pthread Local Storage
