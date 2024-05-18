@@ -22,7 +22,6 @@
 #include <fluent-bit/flb_pack.h>
 
 #include <mqtt.h>
-#include "posix_sockets.h"
 
 struct flb_out_mqtt {
     flb_sds_t client_id;

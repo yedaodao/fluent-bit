@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -e
+
+cd build/
+cmake -DFLB_SIGNV4=Off \
+      -DFLB_AWS=Off \
+      -DFLB_WINDOWS_DEFAULTS=Off \
+      -DFLB_IN_KAFKA=Off \
+      -DFLB_IN_MQTT=Off \
+      -DFLB_IN_COLLECTD=Off \
+      -DFLB_IN_STATSD=Off \
+      -DFLB_IN_STORAGE_BACKLOG=Off \
+      -DFLB_IN_WINDOWS_EXPORTER_METRICS=Off \
+      -DFLB_IN_PODMAN_METRICS=Off \
+      -DFLB_IN_ELASTICSEARCH=Off \
+      -DFLB_IN_CALYPTIA_FLEET=Off \
+      -DFLB_IN_SPLUNK=Off \
+      -DFLB_IN_PROCESS_EXPORTER_METRICS=Off \
+      -DFLB_OUT_AZURE=Off \
+      -DFLB_OUT_AZURE_BLOB=Off \
+      -DFLB_OUT_AZURE_LOGS_INGESTION=Off \
+      -DFLB_OUT_AZURE_KUSTO=Off \
+      -DFLB_OUT_BIGQUERY=Off \
+      -DFLB_OUT_CALYPTIA=Off \
+      -DFLB_OUT_COUNTER=Off \
+      -DFLB_OUT_DATADOG=Off \
+      -DFLB_OUT_ES=Off \
+      -DFLB_OUT_INFLUXDB=Off \
+      -DFLB_OUT_NATS=Off \
+      -DFLB_OUT_NRLOGS=Off \
+      -DFLB_OUT_OPENSEARCH=Off \
+      -DFLB_OUT_PLOT=Off \
+      -DFLB_OUT_TD=Off \
+      -DFLB_OUT_PGSQL=Off \
+      -DFLB_OUT_SKYWALKING=Off \
+      -DFLB_OUT_SLACK=Off \
+      -DFLB_OUT_FLOWCOUNTER=Off \
+      -DFLB_OUT_LOGDNA=Off \
+      -DFLB_OUT_LOKI=Off \
+      -DFLB_OUT_KAFKA_REST=Off \
+      -DFLB_OUT_CLOUDWATCH_LOGS=Off \
+      -DFLB_OUT_KINESIS_FIREHOSE=Off \
+      -DFLB_OUT_KINESIS_STREAMS=Off \
+      -DFLB_OUT_S3=Off \
+      -DFLB_OUT_VIVO_EXPORTER=Off \
+      -DFLB_OUT_ORACLE_LOG_ANALYTICS=Off \
+      -DFLB_OUT_CHRONICLE=Off \
+      -DFLB_OUT_MQTT=On \
+      -DFLB_FILTER_AWS=Off \
+      -DFLB_FILTER_ECS=Off \
+      -DFLB_FILTER_NIGHTFALL=Off \
+      ../
+      

@@ -64,7 +64,7 @@ static void cb_mqtt_flush(struct flb_event_chunk *event_chunk,
     while ((ret = flb_log_event_decoder_next(
                     &log_decoder,
                     &log_event)) == FLB_EVENT_DECODER_SUCCESS) {
-        ret = produce_message(&log_event,
+        ret = publish_message(&log_event,
                               ctx, config);
 
         if (ret != FLB_OK) {
@@ -108,7 +108,7 @@ static struct flb_config_map config_map[] = {
     /* EOF */
     {0}};
 
-int produce_message(struct flb_log_event *log_event,
+int publish_message(struct flb_log_event *log_event,
                     struct flb_out_mqtt *ctx, struct flb_config *config)
 {
     msgpack_sbuffer mp_sbuf;

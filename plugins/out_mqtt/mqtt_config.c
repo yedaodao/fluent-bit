@@ -24,6 +24,11 @@
 #include <fluent-bit/flb_utils.h>
 
 #include "mqtt_config.h"
+#include "posix_sockets.h"
+
+void publish_callback(void **unused, struct mqtt_response_publish *published)
+{
+}
 
 struct flb_out_mqtt *flb_out_mqtt_create(struct flb_output_instance *ins,
                                          struct flb_config *config)
@@ -70,10 +75,6 @@ struct flb_out_mqtt *flb_out_mqtt_create(struct flb_output_instance *ins,
     return ctx;
 }
 
-void publish_callback(void **unused, struct mqtt_response_publish *published)
-{
-}
-
 int flb_out_mqtt_destroy(struct flb_out_mqtt *ctx)
 {
     // TODO MQTT CLIENT
@@ -107,7 +108,7 @@ int flb_out_mqtt_destroy(struct flb_out_mqtt *ctx)
     }
     if (ctx->sockfd)
     {
-        close(ctx->sockfd)
+        close(ctx->sockfd);
     }
     if (ctx->client)
     {
