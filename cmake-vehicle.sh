@@ -37,6 +37,7 @@ cmake -DFLB_SIGNV4=Off \
       -DFLB_OUT_FLOWCOUNTER=Off \
       -DFLB_OUT_LOGDNA=Off \
       -DFLB_OUT_LOKI=Off \
+      -DFLB_OUT_KAFKA=Off \
       -DFLB_OUT_KAFKA_REST=Off \
       -DFLB_OUT_CLOUDWATCH_LOGS=Off \
       -DFLB_OUT_KINESIS_FIREHOSE=Off \

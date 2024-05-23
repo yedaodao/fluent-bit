@@ -1061,7 +1061,7 @@ endif()
 # MQTT
 # ====
 if(FLB_OUT_MQTT)
-  add_subdirectory(${FLB_PATH_LIB_MQTTC} EXCLUDE_FROM_ALL)
+  add_subdirectory(${FLB_PATH_LIB_PAHO_MQTT} EXCLUDE_FROM_ALL)
 endif()
 
 # Pthread Local Storage
