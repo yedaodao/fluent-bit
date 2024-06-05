@@ -31,13 +31,9 @@ int flb_out_mqtt_destroy(struct flb_out_mqtt *ctx)
     {
         return -1;
     }
-    if (ctx->json_date_key)
+    if (ctx->format)
     {
-        flb_sds_destroy(ctx->json_date_key);
-    }
-    if (ctx->date_key)
-    {
-        flb_sds_destroy(ctx->date_key);
+        flb_sds_destroy(ctx->format);
     }
     if (ctx->client_id)
     {
@@ -50,6 +46,10 @@ int flb_out_mqtt_destroy(struct flb_out_mqtt *ctx)
     if (ctx->topic)
     {
         flb_sds_destroy(ctx->topic);
+    }
+    if (ctx->timestamp_key)
+    {
+        flb_sds_destroy(ctx->timestamp_key);
     }
     if (ctx->sendbuf)
     {
@@ -78,7 +78,6 @@ static int cb_mqtt_init(struct flb_output_instance *ins,
 {
     int ret;
     const char *tmp;
-
     struct flb_out_mqtt *ctx = flb_calloc(1, sizeof(struct flb_out_mqtt));
     if (!ctx)
     {
@@ -94,37 +93,27 @@ static int cb_mqtt_init(struct flb_output_instance *ins,
         return -1;
     }
 
-    ctx->out_format = FLB_PACK_JSON_FORMAT_JSON;
-
-    /* Date key */
-    ctx->date_key = ctx->json_date_key;
-    tmp = flb_output_get_property("json_date_key", ins);
+    ctx->out_format = FLB_PACK_JSON_FORMAT_NONE;
+    tmp = flb_output_get_property("format", ins);
     if (tmp)
     {
-        /* Just check if we have to disable it */
-        if (flb_utils_bool(tmp) == FLB_FALSE)
+        if (strcasecmp(tmp, "json") == 0)
         {
-            ctx->date_key = NULL;
+            ctx->out_format = FLB_PACK_JSON_FORMAT_JSON;
         }
-    }
-
-    /* Date format for JSON output */
-    ctx->json_date_format = FLB_PACK_JSON_DATE_DOUBLE;
-    tmp = flb_output_get_property("json_date_format", ins);
-    if (tmp)
-    {
-        ret = flb_pack_to_json_date_type(tmp);
-        if (ret == -1)
+        else if (strcasecmp(tmp, "msgpack") == 0)
         {
-            flb_plg_error(ctx->ins, "invalid json_date_format '%s'. "
-                                    "Using 'double' type",
-                          tmp);
+            ctx->out_format = FLB_PACK_JSON_FORMAT_NONE;
         }
         else
         {
-            ctx->json_date_format = ret;
+            flb_plg_error(ctx->ins, "unrecognized 'format' option. "
+                                    "Using 'json'");
         }
     }
+
+    ctx->timestamp_key = "@timestamp";
+    ctx->timestamp_key_len = strlen(ctx->timestamp_key);
 
     ctx->sendbuf = flb_calloc(16 * 1024, sizeof(uint8_t));
     ctx->recvbuf = flb_calloc(1024, sizeof(uint8_t));
@@ -173,48 +162,133 @@ static void cb_mqtt_flush(struct flb_event_chunk *event_chunk,
 {
     int ret;
     struct flb_out_mqtt *ctx = out_context;
-    flb_sds_t json;
+    struct flb_log_event_decoder log_decoder;
+    struct flb_log_event log_event;
 
     if (!MQTTIsConnected(ctx->client))
     {
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
-    json = flb_pack_msgpack_to_json_format(event_chunk->data,
-                                           event_chunk->size,
-                                           ctx->out_format,
-                                           ctx->json_date_format,
-                                           ctx->date_key);
-    MQTTMessage message;
-    message.qos = 0;
-    message.retained = 0;
-    message.payload = json;
-    message.payloadlen = flb_sds_len(json);
-    ret = MQTTPublish(ctx->client, ctx->topic, &message);
-    flb_sds_destroy(json);
-    if (ret != SUCCESS)
+    ret = flb_log_event_decoder_init(&log_decoder,
+                                     (char *)event_chunk->data,
+                                     event_chunk->size);
+    if (ret != FLB_EVENT_DECODER_SUCCESS)
     {
-        flb_plg_warn(ctx->ins, "Publish failed, return code=%d, error=%s", ret, strerror(errno));
+        flb_plg_error(ctx->ins,
+                      "Log event decoder initialization error : %d", ret);
+
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
+    while ((ret = flb_log_event_decoder_next(
+                &log_decoder,
+                &log_event)) == FLB_EVENT_DECODER_SUCCESS)
+    {
+        ret = produce_message_2_mqtt(&log_event.timestamp, log_event.body, ctx, config);
+        if (ret != FLB_OK)
+        {
+            flb_log_event_decoder_destroy(&log_decoder);
+
+            FLB_OUTPUT_RETURN(ret);
+        }
+    }
+
+    flb_log_event_decoder_destroy(&log_decoder);
+
     FLB_OUTPUT_RETURN(FLB_OK);
+}
+
+int produce_message_2_mqtt(struct flb_time *tm, msgpack_object *map,
+                           struct flb_out_mqtt *ctx, struct flb_config *config)
+{
+
+    int ret;
+    int map_size;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+    char *out_buf;
+    size_t out_size;
+    flb_sds_t tmp_str;
+    msgpack_object key;
+    msgpack_object val;
+
+    if (flb_log_check(FLB_LOG_DEBUG))
+        msgpack_object_print(stderr, *map);
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    // make room for timestamp
+    map_size = map->via.map.size + 1;
+    msgpack_pack_map(&mp_pck, map_size);
+    /* Pack timestamp */
+    msgpack_pack_str(&mp_pck, ctx->timestamp_key_len);
+    msgpack_pack_str_body(&mp_pck, ctx->timestamp_key, ctx->timestamp_key_len);
+    msgpack_pack_double(&mp_pck, flb_time_to_double(tm));
+
+    /* Pack the rest of the map */
+    for (int i = 0; i < map->via.map.size; i++)
+    {
+        key = map->via.map.ptr[i].key;
+        val = map->via.map.ptr[i].val;
+
+        msgpack_pack_object(&mp_pck, key);
+        msgpack_pack_object(&mp_pck, val);
+    }
+
+    if (ctx->out_format == FLB_PACK_JSON_FORMAT_JSON)
+    {
+        tmp_str = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+        if (!tmp_str)
+        {
+            flb_plg_error(ctx->ins, "error encoding to JSON error=%s", strerror(errno));
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            return FLB_ERROR;
+        }
+        out_buf = tmp_str;
+        out_size = flb_sds_len(out_buf);
+    }
+    else
+    {
+        out_buf = mp_sbuf.data;
+        out_size = mp_sbuf.size;
+    }
+
+    MQTTMessage message;
+    message.qos = 0;
+    message.retained = 0;
+    message.payload = out_buf;
+    message.payloadlen = out_size;
+    ret = MQTTPublish(ctx->client, ctx->topic, &message);
+
+    if (ctx->out_format == FLB_PACK_JSON_FORMAT_JSON)
+    {
+        flb_sds_destroy(tmp_str);
+    }
+    msgpack_sbuffer_destroy(&mp_sbuf);
+
+    if (ret != SUCCESS)
+    {
+        flb_plg_warn(ctx->ins, "Publish failed, return code=%d, error=%s", ret, strerror(errno));
+        return FLB_ERROR;
+    }
+    return FLB_OK;
 }
 
 static int cb_mqtt_exit(void *data, struct flb_config *config)
 {
     struct flb_out_mqtt *ctx = data;
+    MQTTDisconnect(ctx->client);
+    NetworkDisconnect(ctx->network);
 
     flb_out_mqtt_destroy(ctx);
     return 0;
 }
 
 static struct flb_config_map config_map[] = {
-    {FLB_CONFIG_MAP_STR, "json_date_format", NULL,
-     0, FLB_FALSE, 0,
-     FBL_PACK_JSON_DATE_FORMAT_DESCRIPTION},
-    {FLB_CONFIG_MAP_STR, "json_date_key", "date",
-     0, FLB_TRUE, offsetof(struct flb_out_mqtt, json_date_key),
+    {FLB_CONFIG_MAP_STR, "format", "json",
+     0, FLB_TRUE, offsetof(struct flb_out_mqtt, format),
      "Specifies the name of the date field in output."},
     {FLB_CONFIG_MAP_STR, "client_id", (char *)NULL,
      0, FLB_TRUE, offsetof(struct flb_out_mqtt, client_id),
@@ -225,14 +299,9 @@ static struct flb_config_map config_map[] = {
     {FLB_CONFIG_MAP_INT, "mqtt_port", 0,
      0, FLB_TRUE, offsetof(struct flb_out_mqtt, mqtt_port),
      "mqtt port"},
-    {
-        FLB_CONFIG_MAP_STR,
-        "topic",
-        (char *)NULL,
-        0,
-        FLB_TRUE,
-        offsetof(struct flb_out_mqtt, topic),
-    },
+    {FLB_CONFIG_MAP_STR, "topic", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct flb_out_mqtt, topic),
+     "mqtt topic"},
     {FLB_CONFIG_MAP_INT, "qos", 0,
      0, FLB_TRUE, offsetof(struct flb_out_mqtt, qos),
      "message qos"},

@@ -25,15 +25,16 @@
 
 struct flb_out_mqtt {
     int out_format;
-    int json_date_format;
-    flb_sds_t json_date_key;
-    flb_sds_t date_key;
+    flb_sds_t format;
     
     flb_sds_t client_id;
     flb_sds_t mqtt_host;
     int mqtt_port;
     flb_sds_t topic;
     int qos;
+
+    char* timestamp_key;
+    int timestamp_key_len;
 
     /* Plugin instance */
     struct flb_output_instance *ins;
