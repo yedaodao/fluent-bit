@@ -8,7 +8,7 @@
 # docker buildx rm builder
 # docker buildx create --name builder --use
 # docker buildx inspect --bootstrap
-# docker buildx build --platform "linux/amd64,linux/arm64,linux/arm/v7,linux/s390x" -f ./dockerfiles/Dockerfile.multiarch --build-arg FLB_TARBALL=https://github.com/fluent/fluent-bit/archive/v1.8.11.tar.gz ./dockerfiles/
+# docker buildx build --platform "linux/arm64" --build-arg RELEASE_VERSION=3.0.3-vehicle -t adas-img.nioint.com/ad-insight/fluent-bit:3.0.3-vehicle -f ./dockerfiles/Dockerfile.vehicle .
 
 # Set this to the current release version: it gets done so as part of the release.
 ARG RELEASE_VERSION=3.0.3
@@ -84,6 +84,7 @@ RUN cmake -DFLB_RELEASE=Off \
     -DFLB_IN_ELASTICSEARCH=Off \
     -DFLB_IN_CALYPTIA_FLEET=Off \
     -DFLB_IN_SPLUNK=Off \
+    -DFLB_OUT_STACKDRIVER=Off \
     -DFLB_IN_PROCESS_EXPORTER_METRICS=Off \
     -DFLB_OUT_AZURE=Off \
     -DFLB_OUT_AZURE_BLOB=Off \
@@ -226,57 +227,3 @@ EXPOSE 2020
 # Entry point
 ENTRYPOINT [ "/fluent-bit/bin/fluent-bit" ]
 CMD ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
-
-# FROM debian:bullseye-slim as debug
-# ARG RELEASE_VERSION
-# ENV FLUENT_BIT_VERSION=${RELEASE_VERSION}
-# LABEL description="Fluent Bit multi-architecture debug container image" \
-#     vendor="Fluent Organization" \
-#     version="${RELEASE_VERSION}-debug" \
-#     author="Eduardo Silva <eduardo@calyptia.com>" \
-#     org.opencontainers.image.description="Fluent Bit debug container image" \
-#     org.opencontainers.image.title="Fluent Bit Debug" \
-#     org.opencontainers.image.licenses="Apache-2.0" \
-#     org.opencontainers.image.vendor="Fluent Organization" \
-#     org.opencontainers.image.version="${RELEASE_VERSION}-debug" \
-#     org.opencontainers.image.source="https://github.com/fluent/fluent-bit" \
-#     org.opencontainers.image.documentation="https://docs.fluentbit.io/" \
-#     org.opencontainers.image.authors="Eduardo Silva <eduardo@calyptia.com>"
-
-# COPY --from=qemu-arm32 /usr/bin/qemu-arm-static /usr/bin/
-# COPY --from=qemu-arm64 /usr/bin/qemu-aarch64-static /usr/bin/
-# ENV DEBIAN_FRONTEND noninteractive
-
-# # hadolint ignore=DL3008
-# RUN echo "deb http://deb.debian.org/debian bullseye-backports main" >> /etc/apt/sources.list && \
-#     apt-get update && \
-#     apt-get install -y --no-install-recommends \
-#     libssl1.1 \
-#     libsasl2-2 \
-#     pkg-config \
-#     libpq5 \
-#     libsystemd0/bullseye-backports \
-#     zlib1g \
-#     ca-certificates \
-#     libatomic1 \
-#     libgcrypt20 \
-#     libyaml-0-2 \
-#     bash gdb valgrind build-essential  \
-#     git bash-completion vim tmux jq \
-#     dnsutils iputils-ping iputils-arping iputils-tracepath iputils-clockdiff \
-#     tcpdump curl nmap tcpflow iftop \
-#     net-tools mtr netcat-openbsd bridge-utils iperf ngrep \
-#     openssl \
-#     htop atop strace iotop sysstat ncdu logrotate hdparm pciutils psmisc tree pv \
-#     cmake make tar flex bison \
-#     libssl-dev libsasl2-dev libsystemd-dev/bullseye-backports zlib1g-dev libpq-dev libyaml-dev postgresql-server-dev-all \
-#     && apt-get clean \
-#     && rm -rf /var/lib/apt/lists/*
-
-# RUN rm -f /usr/bin/qemu-*-static
-# COPY --from=builder /fluent-bit /fluent-bit
-
-# EXPOSE 2020
-
-# # No entry point so we can just shell in
-# CMD ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]

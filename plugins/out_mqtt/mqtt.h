@@ -48,6 +48,4 @@ struct flb_out_mqtt {
     struct MQTTClient *client;
 };
 
-int flb_out_mqtt_destroy(struct flb_out_mqtt *ctx);
-
 #endif

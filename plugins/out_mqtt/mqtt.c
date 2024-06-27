@@ -22,10 +22,103 @@
 #include <fluent-bit/flb_pack.h>
 #include <fluent-bit/flb_utils.h>
 #include <fluent-bit/flb_log_event_decoder.h>
+#include <fluent-bit/flb_random.h>
 
 #include "mqtt.h"
 
-int flb_out_mqtt_destroy(struct flb_out_mqtt *ctx)
+#define CLIENT_ID_RANDOM_BYTE_LEN  12
+
+static void bytes_to_string(unsigned char *data, char *buf, size_t len) {
+    int index;
+    char charset[] = "0123456789"
+                     "abcdefghijklmnopqrstuvwxyz"
+                     "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+    while (len-- > 0) {
+        index = (int) data[len];
+        index = index % (sizeof(charset) - 1);
+        buf[len] = charset[index];
+    }
+}
+
+static int produce_message_2_mqtt(struct flb_time *tm, msgpack_object *map,
+                           struct flb_out_mqtt *ctx, struct flb_config *config)
+{
+
+    int ret;
+    int map_size;
+    msgpack_sbuffer mp_sbuf;
+    msgpack_packer mp_pck;
+    char *out_buf;
+    size_t out_size;
+    flb_sds_t tmp_str;
+    msgpack_object key;
+    msgpack_object val;
+
+    if (flb_log_check(FLB_LOG_DEBUG))
+        msgpack_object_print(stderr, *map);
+
+    msgpack_sbuffer_init(&mp_sbuf);
+    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
+
+    // make room for timestamp
+    map_size = map->via.map.size + 1;
+    msgpack_pack_map(&mp_pck, map_size);
+    /* Pack timestamp */
+    msgpack_pack_str(&mp_pck, ctx->timestamp_key_len);
+    msgpack_pack_str_body(&mp_pck, ctx->timestamp_key, ctx->timestamp_key_len);
+    msgpack_pack_double(&mp_pck, flb_time_to_double(tm));
+
+    /* Pack the rest of the map */
+    for (int i = 0; i < map->via.map.size; i++)
+    {
+        key = map->via.map.ptr[i].key;
+        val = map->via.map.ptr[i].val;
+
+        msgpack_pack_object(&mp_pck, key);
+        msgpack_pack_object(&mp_pck, val);
+    }
+
+    if (ctx->out_format == FLB_PACK_JSON_FORMAT_JSON)
+    {
+        tmp_str = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
+        if (!tmp_str)
+        {
+            flb_plg_error(ctx->ins, "error encoding to JSON error=%s", strerror(errno));
+            msgpack_sbuffer_destroy(&mp_sbuf);
+            return FLB_ERROR;
+        }
+        out_buf = tmp_str;
+        out_size = flb_sds_len(out_buf);
+    }
+    else
+    {
+        out_buf = mp_sbuf.data;
+        out_size = mp_sbuf.size;
+    }
+
+    MQTTMessage message;
+    message.qos = 0;
+    message.retained = 0;
+    message.payload = out_buf;
+    message.payloadlen = out_size;
+    ret = MQTTPublish(ctx->client, ctx->topic, &message);
+
+    if (ctx->out_format == FLB_PACK_JSON_FORMAT_JSON)
+    {
+        flb_sds_destroy(tmp_str);
+    }
+    msgpack_sbuffer_destroy(&mp_sbuf);
+
+    if (ret != SUCCESS)
+    {
+        flb_plg_warn(ctx->ins, "Publish failed, return code=%d, error=%s", ret, strerror(errno));
+        return FLB_ERROR;
+    }
+    return FLB_OK;
+}
+
+static int flb_out_mqtt_destroy(struct flb_out_mqtt *ctx)
 {
     if (!ctx)
     {
@@ -126,7 +219,7 @@ static int cb_mqtt_init(struct flb_output_instance *ins,
     if (connect_rc != 0)
     {
         flb_plg_error(ins, "Failed to connect socket, return code %d, error=%s", connect_rc, strerror(errno));
-        return NULL;
+        return -1;
     }
     MQTTClientInit(ctx->client, ctx->network, 10000, ctx->sendbuf, 16 * 1024, ctx->recvbuf, 1024);
 
@@ -134,9 +227,21 @@ static int cb_mqtt_init(struct flb_output_instance *ins,
     MQTTPacket_connectData connect_config_data = MQTTPacket_connectData_initializer;
     connect_config_data.willFlag = 0;
     connect_config_data.MQTTVersion = 3;
-    connect_config_data.clientID.cstring = ctx->client_id;
     connect_config_data.keepAliveInterval = 10;
     connect_config_data.cleansession = 1;
+    if (ctx->client_id == NULL) {
+        unsigned char random_buf[CLIENT_ID_RANDOM_BYTE_LEN];
+        int random_ret = flb_random_bytes(random_buf, CLIENT_ID_RANDOM_BYTE_LEN);
+        if (random_ret != 0) {
+            flb_plg_error(ins, "Failed to generate random client id");
+            return -1;
+        }
+        char *random_client_id = flb_calloc(CLIENT_ID_RANDOM_BYTE_LEN + 1, sizeof(char));
+        bytes_to_string(random_buf, random_client_id, CLIENT_ID_RANDOM_BYTE_LEN);
+        ctx->client_id = random_client_id;
+        
+    }
+    connect_config_data.clientID.cstring = ctx->client_id;
 
     flb_plg_info(ins, "Connecting to %s:%d\n", ctx->mqtt_host, ctx->mqtt_port);
 
@@ -144,7 +249,7 @@ static int cb_mqtt_init(struct flb_output_instance *ins,
     if (rc != SUCCESS)
     {
         flb_plg_error(ins, "Failed to connect MQTT, return code %d, error=%s", rc, strerror(errno));
-        return NULL;
+        return -1;
     }
     flb_plg_info(ins, "Connected %d\n", rc);
 
@@ -199,82 +304,7 @@ static void cb_mqtt_flush(struct flb_event_chunk *event_chunk,
     FLB_OUTPUT_RETURN(FLB_OK);
 }
 
-int produce_message_2_mqtt(struct flb_time *tm, msgpack_object *map,
-                           struct flb_out_mqtt *ctx, struct flb_config *config)
-{
 
-    int ret;
-    int map_size;
-    msgpack_sbuffer mp_sbuf;
-    msgpack_packer mp_pck;
-    char *out_buf;
-    size_t out_size;
-    flb_sds_t tmp_str;
-    msgpack_object key;
-    msgpack_object val;
-
-    if (flb_log_check(FLB_LOG_DEBUG))
-        msgpack_object_print(stderr, *map);
-
-    msgpack_sbuffer_init(&mp_sbuf);
-    msgpack_packer_init(&mp_pck, &mp_sbuf, msgpack_sbuffer_write);
-
-    // make room for timestamp
-    map_size = map->via.map.size + 1;
-    msgpack_pack_map(&mp_pck, map_size);
-    /* Pack timestamp */
-    msgpack_pack_str(&mp_pck, ctx->timestamp_key_len);
-    msgpack_pack_str_body(&mp_pck, ctx->timestamp_key, ctx->timestamp_key_len);
-    msgpack_pack_double(&mp_pck, flb_time_to_double(tm));
-
-    /* Pack the rest of the map */
-    for (int i = 0; i < map->via.map.size; i++)
-    {
-        key = map->via.map.ptr[i].key;
-        val = map->via.map.ptr[i].val;
-
-        msgpack_pack_object(&mp_pck, key);
-        msgpack_pack_object(&mp_pck, val);
-    }
-
-    if (ctx->out_format == FLB_PACK_JSON_FORMAT_JSON)
-    {
-        tmp_str = flb_msgpack_raw_to_json_sds(mp_sbuf.data, mp_sbuf.size);
-        if (!tmp_str)
-        {
-            flb_plg_error(ctx->ins, "error encoding to JSON error=%s", strerror(errno));
-            msgpack_sbuffer_destroy(&mp_sbuf);
-            return FLB_ERROR;
-        }
-        out_buf = tmp_str;
-        out_size = flb_sds_len(out_buf);
-    }
-    else
-    {
-        out_buf = mp_sbuf.data;
-        out_size = mp_sbuf.size;
-    }
-
-    MQTTMessage message;
-    message.qos = 0;
-    message.retained = 0;
-    message.payload = out_buf;
-    message.payloadlen = out_size;
-    ret = MQTTPublish(ctx->client, ctx->topic, &message);
-
-    if (ctx->out_format == FLB_PACK_JSON_FORMAT_JSON)
-    {
-        flb_sds_destroy(tmp_str);
-    }
-    msgpack_sbuffer_destroy(&mp_sbuf);
-
-    if (ret != SUCCESS)
-    {
-        flb_plg_warn(ctx->ins, "Publish failed, return code=%d, error=%s", ret, strerror(errno));
-        return FLB_ERROR;
-    }
-    return FLB_OK;
-}
 
 static int cb_mqtt_exit(void *data, struct flb_config *config)
 {
