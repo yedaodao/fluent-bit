@@ -2,7 +2,15 @@
 set -e
 
 cd build/
-cmake -DFLB_SIGNV4=Off \
+cmake -DFLB_RELEASE=Off \
+      -DFLB_JEMALLOC=Off \
+      -DFLB_TLS=On \
+      -DFLB_SHARED_LIB=Off \
+      -DFLB_EXAMPLES=Off \
+      -DFLB_HTTP_SERVER=On \
+      -DFLB_IN_EXEC=Off \
+      -DFLB_IN_SYSTEMD=On \
+      -DFLB_SIGNV4=Off \
       -DFLB_AWS=Off \
       -DFLB_WINDOWS_DEFAULTS=Off \
       -DFLB_IN_KAFKA=Off \
@@ -15,6 +23,7 @@ cmake -DFLB_SIGNV4=Off \
       -DFLB_IN_ELASTICSEARCH=Off \
       -DFLB_IN_CALYPTIA_FLEET=Off \
       -DFLB_IN_SPLUNK=Off \
+      -DFLB_OUT_STACKDRIVER=Off \
       -DFLB_IN_PROCESS_EXPORTER_METRICS=Off \
       -DFLB_OUT_AZURE=Off \
       -DFLB_OUT_AZURE_BLOB=Off \
@@ -50,5 +59,7 @@ cmake -DFLB_SIGNV4=Off \
       -DFLB_FILTER_AWS=Off \
       -DFLB_FILTER_ECS=Off \
       -DFLB_FILTER_NIGHTFALL=Off \
+      -DFLB_NIGHTLY_BUILD=Off \
+      -DFLB_LOG_NO_CONTROL_CHARS=On \
+      -DFLB_CHUNK_TRACE=On \
       ../
-      

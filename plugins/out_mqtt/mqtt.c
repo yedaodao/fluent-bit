@@ -41,6 +41,58 @@ static void bytes_to_string(unsigned char *data, char *buf, size_t len) {
     }
 }
 
+static int get_mqtt_connect(MQTTClient *client, struct flb_out_mqtt *ctx)
+{
+    if (client->isconnected) {
+        return 0;
+    }
+    if (ctx->client == NULL || ctx->network == NULL) {
+        return -1;
+    }
+    MQTTDisconnect(ctx->client);
+    NetworkDisconnect(ctx->network);
+    
+    int connect_rc = NetworkConnect(ctx->network, ctx->mqtt_host, ctx->mqtt_port);
+    if (connect_rc != 0)
+    {
+        flb_plg_error(ctx->ins, "Failed to connect socket, return code %d, error=%s", connect_rc, strerror(errno));
+        return -1;
+    }
+    MQTTClientInit(ctx->client, ctx->network, 10000, ctx->sendbuf, 16 * 1024, ctx->recvbuf, 1024);
+
+    // MQTTPacket_connectData data;
+    MQTTPacket_connectData connect_config_data = MQTTPacket_connectData_initializer;
+    connect_config_data.willFlag = 0;
+    connect_config_data.MQTTVersion = 3;
+    connect_config_data.keepAliveInterval = 300;
+    connect_config_data.cleansession = 1;
+    if (ctx->client_id == NULL) {
+        unsigned char random_buf[CLIENT_ID_RANDOM_BYTE_LEN];
+        int random_ret = flb_random_bytes(random_buf, CLIENT_ID_RANDOM_BYTE_LEN);
+        if (random_ret != 0) {
+            flb_plg_error(ctx->ins, "Failed to generate random client id");
+            return -1;
+        }
+        char *random_client_id = flb_calloc(CLIENT_ID_RANDOM_BYTE_LEN + 1, sizeof(char));
+        bytes_to_string(random_buf, random_client_id, CLIENT_ID_RANDOM_BYTE_LEN);
+        ctx->client_id = random_client_id;
+        
+    }
+    connect_config_data.clientID.cstring = ctx->client_id;
+
+    flb_plg_info(ctx->ins, "Connecting to %s:%d\n", ctx->mqtt_host, ctx->mqtt_port);
+
+    int rc = MQTTConnect(ctx->client, &connect_config_data);
+    if (rc != SUCCESS)
+    {
+        flb_plg_error(ctx->ins, "Failed to connect MQTT, return code %d, error=%s", rc, strerror(errno));
+        return -1;
+    }
+    flb_plg_info(ctx->ins, "Connected %d\n", rc);
+
+    return 0;
+}
+
 static int produce_message_2_mqtt(struct flb_time *tm, msgpack_object *map,
                            struct flb_out_mqtt *ctx, struct flb_config *config)
 {
@@ -86,7 +138,7 @@ static int produce_message_2_mqtt(struct flb_time *tm, msgpack_object *map,
         {
             flb_plg_error(ctx->ins, "error encoding to JSON error=%s", strerror(errno));
             msgpack_sbuffer_destroy(&mp_sbuf);
-            return FLB_ERROR;
+            return -1;
         }
         out_buf = tmp_str;
         out_size = flb_sds_len(out_buf);
@@ -110,12 +162,12 @@ static int produce_message_2_mqtt(struct flb_time *tm, msgpack_object *map,
     }
     msgpack_sbuffer_destroy(&mp_sbuf);
 
-    if (ret != SUCCESS)
+    if (ret != 0)
     {
         flb_plg_warn(ctx->ins, "Publish failed, return code=%d, error=%s", ret, strerror(errno));
-        return FLB_ERROR;
+        return -1;
     }
-    return FLB_OK;
+    return 1;
 }
 
 static int flb_out_mqtt_destroy(struct flb_out_mqtt *ctx)
@@ -175,7 +227,7 @@ static int cb_mqtt_init(struct flb_output_instance *ins,
     if (!ctx)
     {
         flb_errno();
-        return -1;
+        return FLB_ERROR;
     }
     ctx->ins = ins;
 
@@ -183,7 +235,7 @@ static int cb_mqtt_init(struct flb_output_instance *ins,
     if (ret == -1)
     {
         flb_free(ctx);
-        return -1;
+        return FLB_ERROR;
     }
 
     ctx->out_format = FLB_PACK_JSON_FORMAT_NONE;
@@ -202,6 +254,7 @@ static int cb_mqtt_init(struct flb_output_instance *ins,
         {
             flb_plg_error(ctx->ins, "unrecognized 'format' option. "
                                     "Using 'json'");
+            return FLB_ERROR;
         }
     }
 
@@ -213,50 +266,19 @@ static int cb_mqtt_init(struct flb_output_instance *ins,
 
     ctx->network = flb_calloc(1, sizeof(struct Network));
     ctx->client = flb_calloc(1, sizeof(struct MQTTClient));
-
     NetworkInit(ctx->network);
-    int connect_rc = NetworkConnect(ctx->network, ctx->mqtt_host, ctx->mqtt_port);
-    if (connect_rc != 0)
+    
+    ret = get_mqtt_connect(ctx->client, ctx);
+    if (ret != 0)
     {
-        flb_plg_error(ins, "Failed to connect socket, return code %d, error=%s", connect_rc, strerror(errno));
-        return -1;
+        flb_plg_error(ctx->ins, "Failed to get MQTT connnection, return code %d, error=%s", ret, strerror(errno));
+        return FLB_ERROR;
     }
-    MQTTClientInit(ctx->client, ctx->network, 10000, ctx->sendbuf, 16 * 1024, ctx->recvbuf, 1024);
-
-    // MQTTPacket_connectData data;
-    MQTTPacket_connectData connect_config_data = MQTTPacket_connectData_initializer;
-    connect_config_data.willFlag = 0;
-    connect_config_data.MQTTVersion = 3;
-    connect_config_data.keepAliveInterval = 10;
-    connect_config_data.cleansession = 1;
-    if (ctx->client_id == NULL) {
-        unsigned char random_buf[CLIENT_ID_RANDOM_BYTE_LEN];
-        int random_ret = flb_random_bytes(random_buf, CLIENT_ID_RANDOM_BYTE_LEN);
-        if (random_ret != 0) {
-            flb_plg_error(ins, "Failed to generate random client id");
-            return -1;
-        }
-        char *random_client_id = flb_calloc(CLIENT_ID_RANDOM_BYTE_LEN + 1, sizeof(char));
-        bytes_to_string(random_buf, random_client_id, CLIENT_ID_RANDOM_BYTE_LEN);
-        ctx->client_id = random_client_id;
-        
-    }
-    connect_config_data.clientID.cstring = ctx->client_id;
-
-    flb_plg_info(ins, "Connecting to %s:%d\n", ctx->mqtt_host, ctx->mqtt_port);
-
-    int rc = MQTTConnect(ctx->client, &connect_config_data);
-    if (rc != SUCCESS)
-    {
-        flb_plg_error(ins, "Failed to connect MQTT, return code %d, error=%s", rc, strerror(errno));
-        return -1;
-    }
-    flb_plg_info(ins, "Connected %d\n", rc);
 
     /* Export context */
     flb_output_set_context(ins, ctx);
 
-    return 0;
+    return FLB_OK;
 }
 
 static void cb_mqtt_flush(struct flb_event_chunk *event_chunk,
@@ -272,6 +294,13 @@ static void cb_mqtt_flush(struct flb_event_chunk *event_chunk,
 
     if (!MQTTIsConnected(ctx->client))
     {
+        flb_plg_warn(ctx->ins, "MQTT client is not connected, reconnecting");
+        ret = get_mqtt_connect(ctx->client, ctx);
+        if (ret != 0)
+        {
+            flb_plg_error(ctx->ins, "Failed to get MQTT connnection, return code %d, error=%s", ret, strerror(errno));
+        }
+        
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
