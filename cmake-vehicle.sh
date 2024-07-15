@@ -2,7 +2,8 @@
 set -e
 
 cd build/
-cmake -DFLB_RELEASE=Off \
+cmake -DSANITIZE_ADDRESS=On \
+      -DFLB_RELEASE=Off \
       -DFLB_JEMALLOC=Off \
       -DFLB_TLS=On \
       -DFLB_SHARED_LIB=Off \
@@ -63,3 +64,5 @@ cmake -DFLB_RELEASE=Off \
       -DFLB_LOG_NO_CONTROL_CHARS=On \
       -DFLB_CHUNK_TRACE=On \
       ../
+
+export ASAN_OPTIONS=halt_on_error=0

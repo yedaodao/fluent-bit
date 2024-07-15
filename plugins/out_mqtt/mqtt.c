@@ -26,32 +26,46 @@
 
 #include "mqtt.h"
 
-#define CLIENT_ID_RANDOM_BYTE_LEN  12
+static void init_random_client_id(struct flb_out_mqtt *ctx, int len)
+{
+    ctx->client_id = flb_sds_create_size(len);
+    int random_ret = flb_random_bytes(ctx->client_id, len);
+    if (random_ret != 0)
+    {
+        flb_plg_error(ctx->ins, "Failed to generate random client id");
+        return -1;
+    }
 
-static void bytes_to_string(unsigned char *data, char *buf, size_t len) {
-    int index;
+    int i=0;
+    int num;
     char charset[] = "0123456789"
                      "abcdefghijklmnopqrstuvwxyz"
                      "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    int charset_len = strlen(charset);
 
-    while (len-- > 0) {
-        index = (int) data[len];
-        index = index % (sizeof(charset) - 1);
-        buf[len] = charset[index];
+    while (i < len)
+    {
+        num = (int)ctx->client_id[len];
+        num = num % charset_len;
+        ctx->client_id[i] = charset[num];
+        i++;
     }
+    ctx->client_id[len] = '\0';
 }
 
 static int get_mqtt_connect(MQTTClient *client, struct flb_out_mqtt *ctx)
 {
-    if (client->isconnected) {
+    if (client->isconnected)
+    {
         return 0;
     }
-    if (ctx->client == NULL || ctx->network == NULL) {
+    if (ctx->client == NULL || ctx->network == NULL)
+    {
         return -1;
     }
     MQTTDisconnect(ctx->client);
     NetworkDisconnect(ctx->network);
-    
+
     int connect_rc = NetworkConnect(ctx->network, ctx->mqtt_host, ctx->mqtt_port);
     if (connect_rc != 0)
     {
@@ -66,17 +80,9 @@ static int get_mqtt_connect(MQTTClient *client, struct flb_out_mqtt *ctx)
     connect_config_data.MQTTVersion = 3;
     connect_config_data.keepAliveInterval = 300;
     connect_config_data.cleansession = 1;
-    if (ctx->client_id == NULL) {
-        unsigned char random_buf[CLIENT_ID_RANDOM_BYTE_LEN];
-        int random_ret = flb_random_bytes(random_buf, CLIENT_ID_RANDOM_BYTE_LEN);
-        if (random_ret != 0) {
-            flb_plg_error(ctx->ins, "Failed to generate random client id");
-            return -1;
-        }
-        char *random_client_id = flb_calloc(CLIENT_ID_RANDOM_BYTE_LEN + 1, sizeof(char));
-        bytes_to_string(random_buf, random_client_id, CLIENT_ID_RANDOM_BYTE_LEN);
-        ctx->client_id = random_client_id;
-        
+    if (ctx->client_id == NULL)
+    {
+        init_random_client_id(ctx, 12);
     }
     connect_config_data.clientID.cstring = ctx->client_id;
 
@@ -94,7 +100,7 @@ static int get_mqtt_connect(MQTTClient *client, struct flb_out_mqtt *ctx)
 }
 
 static int produce_message_2_mqtt(struct flb_time *tm, msgpack_object *map,
-                           struct flb_out_mqtt *ctx, struct flb_config *config)
+                                  struct flb_out_mqtt *ctx, struct flb_config *config)
 {
 
     int ret;
@@ -117,8 +123,8 @@ static int produce_message_2_mqtt(struct flb_time *tm, msgpack_object *map,
     map_size = map->via.map.size + 1;
     msgpack_pack_map(&mp_pck, map_size);
     /* Pack timestamp */
-    msgpack_pack_str(&mp_pck, ctx->timestamp_key_len);
-    msgpack_pack_str_body(&mp_pck, ctx->timestamp_key, ctx->timestamp_key_len);
+    msgpack_pack_str(&mp_pck, flb_sds_len(ctx->timestamp_key));
+    msgpack_pack_str_body(&mp_pck, ctx->timestamp_key, flb_sds_len(ctx->timestamp_key));
     msgpack_pack_double(&mp_pck, flb_time_to_double(tm));
 
     /* Pack the rest of the map */
@@ -176,21 +182,9 @@ static int flb_out_mqtt_destroy(struct flb_out_mqtt *ctx)
     {
         return -1;
     }
-    if (ctx->format)
-    {
-        flb_sds_destroy(ctx->format);
-    }
     if (ctx->client_id)
     {
         flb_sds_destroy(ctx->client_id);
-    }
-    if (ctx->mqtt_host)
-    {
-        flb_sds_destroy(ctx->mqtt_host);
-    }
-    if (ctx->topic)
-    {
-        flb_sds_destroy(ctx->topic);
     }
     if (ctx->timestamp_key)
     {
@@ -212,7 +206,7 @@ static int flb_out_mqtt_destroy(struct flb_out_mqtt *ctx)
     {
         flb_free(ctx->client);
     }
-
+    
     flb_free(ctx);
     return 0;
 }
@@ -258,8 +252,7 @@ static int cb_mqtt_init(struct flb_output_instance *ins,
         }
     }
 
-    ctx->timestamp_key = "@timestamp";
-    ctx->timestamp_key_len = strlen(ctx->timestamp_key);
+    ctx->timestamp_key = flb_sds_create("@timestamp");
 
     ctx->sendbuf = flb_calloc(16 * 1024, sizeof(uint8_t));
     ctx->recvbuf = flb_calloc(1024, sizeof(uint8_t));
@@ -267,7 +260,7 @@ static int cb_mqtt_init(struct flb_output_instance *ins,
     ctx->network = flb_calloc(1, sizeof(struct Network));
     ctx->client = flb_calloc(1, sizeof(struct MQTTClient));
     NetworkInit(ctx->network);
-    
+
     ret = get_mqtt_connect(ctx->client, ctx);
     if (ret != 0)
     {
@@ -300,7 +293,7 @@ static void cb_mqtt_flush(struct flb_event_chunk *event_chunk,
         {
             flb_plg_error(ctx->ins, "Failed to get MQTT connnection, return code %d, error=%s", ret, strerror(errno));
         }
-        
+
         FLB_OUTPUT_RETURN(FLB_RETRY);
     }
 
@@ -332,8 +325,6 @@ static void cb_mqtt_flush(struct flb_event_chunk *event_chunk,
 
     FLB_OUTPUT_RETURN(FLB_OK);
 }
-
-
 
 static int cb_mqtt_exit(void *data, struct flb_config *config)
 {

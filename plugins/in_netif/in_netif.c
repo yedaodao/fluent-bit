@@ -193,7 +193,7 @@ static int read_proc_file_linux(struct flb_in_netif_config *ctx)
     char line[LINE_LEN] = {0};
     int interface_found = FLB_FALSE;
 
-    fp = fopen("/proc/net/dev", "r");
+    fp = fopen(ctx->proc_path, "r");
     if (fp == NULL) {
         flb_errno();
         flb_plg_error(ctx->ins, "cannot open /proc/net/dev");
@@ -254,7 +254,7 @@ static int in_netif_collect_linux(struct flb_input_instance *i_ins,
                 ret = flb_log_event_encoder_append_body_values(
                         ctx->log_encoder,
                         FLB_LOG_EVENT_CSTRING_VALUE(key_name),
-                        FLB_LOG_EVENT_UINT64_VALUE(calc_diff(&ctx->entry[i])));
+                        FLB_LOG_EVENT_UINT64_VALUE(&ctx->entry[i].now));
 
                 ctx->entry[i].prev = ctx->entry[i].now;
             }
@@ -373,6 +373,11 @@ static struct flb_config_map config_map[] = {
       FLB_CONFIG_MAP_BOOL, "test_at_init", "false",
       0, FLB_TRUE, offsetof(struct flb_in_netif_config, test_at_init),
       "Testing interface at initialization"
+    },
+    {
+        FLB_CONFIG_MAP_STR, "proc_path", "/proc/net/dev",
+        0, FLB_TRUE, offsetof(struct flb_in_netif_config, proc_path),
+        "Custom the path of proc file, default is /proc/net/dev"
     },
     /* EOF */
     {0}

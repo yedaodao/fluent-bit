@@ -469,6 +469,7 @@ endif()
 # Is sanitize_address defined ?
 if(SANITIZE_ADDRESS)
   FLB_DEFINITION(FLB_HAVE_SANITIZE_ADDRESS)
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address -fno-omit-frame-pointer")
 endif()
 
 # Record Accessor

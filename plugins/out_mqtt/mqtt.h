@@ -33,9 +33,8 @@ struct flb_out_mqtt {
     flb_sds_t topic;
     int qos;
 
-    char* timestamp_key;
-    int timestamp_key_len;
-
+    flb_sds_t timestamp_key;
+    
     /* Plugin instance */
     struct flb_output_instance *ins;
 
