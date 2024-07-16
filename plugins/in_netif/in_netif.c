@@ -196,7 +196,7 @@ static int read_proc_file_linux(struct flb_in_netif_config *ctx)
     fp = fopen(ctx->proc_path, "r");
     if (fp == NULL) {
         flb_errno();
-        flb_plg_error(ctx->ins, "cannot open /proc/net/dev");
+        flb_plg_error(ctx->ins, "Failed to open %s", ctx->proc_path);
         return -1;
     }
     while(fgets(line, LINE_LEN-1, fp) != NULL){
@@ -254,7 +254,7 @@ static int in_netif_collect_linux(struct flb_input_instance *i_ins,
                 ret = flb_log_event_encoder_append_body_values(
                         ctx->log_encoder,
                         FLB_LOG_EVENT_CSTRING_VALUE(key_name),
-                        FLB_LOG_EVENT_UINT64_VALUE(&ctx->entry[i].now));
+                        FLB_LOG_EVENT_UINT64_VALUE(calc_diff(&ctx->entry[i])));
 
                 ctx->entry[i].prev = ctx->entry[i].now;
             }
