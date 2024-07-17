@@ -45,7 +45,7 @@ static void init_random_client_id(struct flb_out_mqtt *ctx, int len)
 
     while (i < len)
     {
-        num = (int)ctx->client_id[len];
+        num = (int)ctx->client_id[i];
         num = num % charset_len;
         ctx->client_id[i] = charset[num];
         i++;
