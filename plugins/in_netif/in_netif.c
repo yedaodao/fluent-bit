@@ -130,7 +130,7 @@ static inline int is_specific_interface(struct flb_in_netif_config *ctx,
                                         char* interface)
 {
     if (ctx->interface != NULL &&
-        !strncmp(ctx->interface, interface, ctx->interface_len)) {
+        !strcmp(ctx->interface, interface)) {
         return FLB_TRUE;
     }
     return FLB_FALSE;
@@ -157,6 +157,7 @@ static int parse_proc_line(char *line,
         sentry = mk_list_entry(head, struct flb_split_entry ,_head);
         if (i==0) {
             /* interface name */
+            sentry->value[strlen(sentry->value)-1] = '\0';
             if( is_specific_interface(ctx, sentry->value)){
                 i++;
                 continue;
